@@ -12,6 +12,7 @@ import sys
 import json
 import queue
 import time
+import ijson
 
 # Placeholder imports for future implementation
 # from lxml import etree
@@ -411,7 +412,7 @@ class XMLToVideoApp:
         # Update listbox
         self.data_queue_listbox.delete(0, tk.END)
         for i, data_path in enumerate(self.data_queue, 1):
-            filename = os.path.basename(data_path)
+            filename = os.path.basename(data_path['data_path'])
             self.data_queue_listbox.insert(tk.END, f"{i}. {filename}")
         
         if count > 0:
