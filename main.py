@@ -1,6 +1,8 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import os
+import csv
+from datetime import datetime
 from lxml import etree
 from docx import Document
 from PIL import Image, ImageDraw, ImageFont
@@ -13,11 +15,6 @@ import json
 import queue
 import time
 import ijson
-
-# Placeholder imports for future implementation
-# from lxml import etree
-# from moviepy.editor import ImageSequenceClip
-# from PIL import Image, ImageDraw, ImageFont
 
 class XMLToVideoApp:
     def __init__(self, root):
@@ -51,11 +48,6 @@ class XMLToVideoApp:
         self.xml_frame = tk.Frame(self.main_frame)
         self.data_frame = tk.Frame(self.main_frame)
         self.idfx_frame = tk.Frame(self.main_frame)
-        
-        # Initially show XML frame
-        self.xml_frame.pack(fill="both", expand=True)
-        self.data_frame.pack_forget()
-        self.idfx_frame.pack_forget()
 
         # --- XML/Word Frame ---
 
@@ -207,6 +199,10 @@ class XMLToVideoApp:
         self.margin_entry = tk.Entry(font_frame, textvariable=self.margin_var, width=5)
         self.margin_entry.grid(row=1, column=1, padx=5)
 
+        self.show_caret_var = tk.BooleanVar(value=True)
+        self.show_caret_check = tk.Checkbutton(font_frame, text="Show caret", variable=self.show_caret_var)
+        self.show_caret_check.grid(row=1, column=2, padx=5)
+
         window_frame = tk.LabelFrame(self.main_frame, text="Moving Window")
         window_frame.pack(pady=5, fill="x", padx=10)
         self.moving_window_var = tk.BooleanVar(value=False)
@@ -220,36 +216,37 @@ class XMLToVideoApp:
         self.window_wordonly_check = tk.Checkbutton(window_frame, text="Window Only Current Word", variable=self.window_wordonly_var, state="disabled")
         self.window_wordonly_check.grid(row=0, column=3, padx=5)
         
-        # Add mask character control on a new row
-        tk.Label(window_frame, text="Mask Character:").grid(row=1, column=0, sticky="w", padx=5)
-        self.mask_character_var = tk.StringVar(value="_")
-        self.mask_character_entry = tk.Entry(window_frame, textvariable=self.mask_character_var, width=3, state="disabled")
-        self.mask_character_entry.grid(row=1, column=1, padx=5)
+        # Add mask character controls on a new row
+        tk.Label(window_frame, text="Mask (narrow):").grid(row=1, column=0, sticky="w", padx=5)
+        self.mask_narrow_var = tk.StringVar(value="_")
+        self.mask_narrow_entry = tk.Entry(window_frame, textvariable=self.mask_narrow_var, width=3, state="disabled")
+        self.mask_narrow_entry.grid(row=1, column=1, padx=5)
+        tk.Label(window_frame, text="Mask (wide):").grid(row=1, column=2, sticky="w", padx=5)
+        self.mask_wide_var = tk.StringVar(value="#")
+        self.mask_wide_entry = tk.Entry(window_frame, textvariable=self.mask_wide_var, width=3, state="disabled")
+        self.mask_wide_entry.grid(row=1, column=3, padx=5)
 
         uniform_frame = tk.LabelFrame(self.main_frame, text="Uniform Typing Mode")
         uniform_frame.pack(pady=5, fill="x", padx=10)
         self.uniform_typing_var = tk.BooleanVar(value=False)
-        self.uniform_typing_check = tk.Checkbutton(uniform_frame, text="Uniform Typing Speed (use Word file as reference)", variable=self.uniform_typing_var)
+        self.uniform_typing_check = tk.Checkbutton(uniform_frame, text="Uniform Typing Speed (use Word file as reference)", variable=self.uniform_typing_var, command=self.update_uniform_typing_controls)
         self.uniform_typing_check.grid(row=0, column=0, sticky="w", padx=5)
         tk.Label(uniform_frame, text="Characters per Second:").grid(row=0, column=1, sticky="w", padx=5)
         self.chars_per_sec_var = tk.DoubleVar(value=10.0)
-        self.chars_per_sec_entry = tk.Entry(uniform_frame, textvariable=self.chars_per_sec_var, width=5)
+        self.chars_per_sec_entry = tk.Entry(uniform_frame, textvariable=self.chars_per_sec_var, width=5, state="disabled")
         self.chars_per_sec_entry.grid(row=0, column=2, padx=5)
-
-        speed_frame = tk.LabelFrame(self.main_frame, text="Speed Settings")
-        speed_frame.pack(pady=5, fill="x", padx=10)
-        tk.Label(speed_frame, text="Video Speed Multiplier:").grid(row=0, column=0, sticky="w", padx=5)
+        tk.Label(uniform_frame, text="Video Speed Multiplier:").grid(row=0, column=3, sticky="w", padx=5)
         self.video_speed_var = tk.DoubleVar(value=1.0)
-        self.video_speed_entry = tk.Entry(speed_frame, textvariable=self.video_speed_var, width=5)
-        self.video_speed_entry.grid(row=0, column=1, padx=5)
-        tk.Label(speed_frame, text="Word Typing Speed (s/word):").grid(row=0, column=2, sticky="w", padx=5)
+        self.video_speed_entry = tk.Entry(uniform_frame, textvariable=self.video_speed_var, width=5, state="disabled")
+        self.video_speed_entry.grid(row=0, column=4, padx=5)
+        tk.Label(uniform_frame, text="Word Typing Speed (s/word):").grid(row=1, column=0, sticky="w", padx=5)
         self.word_speed_var = tk.DoubleVar(value=0.15)
-        self.word_speed_entry = tk.Entry(speed_frame, textvariable=self.word_speed_var, width=5)
-        self.word_speed_entry.grid(row=0, column=3, padx=5)
-        tk.Label(speed_frame, text="Space Duration (s):").grid(row=0, column=4, sticky="w", padx=5)
+        self.word_speed_entry = tk.Entry(uniform_frame, textvariable=self.word_speed_var, width=5, state="disabled")
+        self.word_speed_entry.grid(row=1, column=1, padx=5)
+        tk.Label(uniform_frame, text="Space Duration (s):").grid(row=1, column=2, sticky="w", padx=5)
         self.space_duration_var = tk.DoubleVar(value=0.25)
-        self.space_duration_entry = tk.Entry(speed_frame, textvariable=self.space_duration_var, width=5)
-        self.space_duration_entry.grid(row=0, column=5, padx=5)
+        self.space_duration_entry = tk.Entry(uniform_frame, textvariable=self.space_duration_var, width=5, state="disabled")
+        self.space_duration_entry.grid(row=1, column=3, padx=5)
 
         # Video Timing Controls
         timing_frame = tk.LabelFrame(self.main_frame, text="Video Timing Controls")
@@ -297,6 +294,8 @@ class XMLToVideoApp:
         self.preview_btn.pack(side="left", padx=5)
         self.save_settings_btn = tk.Button(options_frame, text="Save Settings", command=self.save_settings, bg="white", fg="black")
         self.save_settings_btn.pack(side="left", padx=5)
+        self.load_csv_settings_btn = tk.Button(options_frame, text="Load Settings from CSV", command=self.load_settings_from_csv, bg="white", fg="black")
+        self.load_csv_settings_btn.pack(side="left", padx=5)
 
         # Initialize queue displays
         self.update_xml_queue_display()
@@ -305,6 +304,9 @@ class XMLToVideoApp:
 
         # Load settings if available
         self.load_settings()
+
+        # Apply file-type layout (ensures correct layout on first boot)
+        self.on_file_type_change()
 
     def on_file_type_change(self, event=None):
         """Handle file type dropdown change"""
@@ -453,9 +455,14 @@ class XMLToVideoApp:
         
         def process_queue():
             try:
-                # Create output folder in the program directory
+                # Create output folder (timestamped batch subfolder only when 2+ files)
                 program_dir = os.path.dirname(os.path.abspath(__file__))
-                output_folder = os.path.join(program_dir, 'xml-to-text-video-output')
+                base_output = os.path.join(program_dir, 'xml-to-text-video-output')
+                if len(self.xml_queue) > 1:
+                    batch_folder_name = f"BATCH UPLOAD {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
+                    output_folder = os.path.join(base_output, batch_folder_name)
+                else:
+                    output_folder = base_output
                 os.makedirs(output_folder, exist_ok=True)
                 
                 for i, item in enumerate(self.xml_queue):
@@ -503,14 +510,16 @@ class XMLToVideoApp:
                             settings.get("moving_window", False),
                             settings.get("window_size", 10),
                             settings.get("window_wordonly", False),
-                            settings.get("mask_character", "_"),
+                            settings.get("mask_narrow", "_"),
+                            settings.get("mask_wide", "#"),
                             settings.get("margin", 20),
                             None,  # progress_callback
                             self.enable_timing_var.get(),
                             self.start_time_var.get(),
                             self.end_time_var.get(),
                             self.duration_percent_var.get(),
-                            self.timing_mode_var.get()
+                            self.timing_mode_var.get(),
+                            settings.get("show_caret", True)
                         )
                         
                         # Assemble video
@@ -518,6 +527,7 @@ class XMLToVideoApp:
                             xml_filename = os.path.splitext(os.path.basename(xml_path))[0]
                             output_path = os.path.join(output_folder, f'{xml_filename}.mp4')
                             self.save_video(frames, frame_times, output_path)
+                            self.export_settings_to_csv(settings, output_path)
                         
                         # Restore original paths
                         self.xml_path = original_xml_path
@@ -564,9 +574,14 @@ class XMLToVideoApp:
         
         def process_queue():
             try:
-                # Create output folder in the program directory
+                # Create output folder (timestamped batch subfolder only when 2+ files)
                 program_dir = os.path.dirname(os.path.abspath(__file__))
-                output_folder = os.path.join(program_dir, 'xml-to-text-video-output')
+                base_output = os.path.join(program_dir, 'xml-to-text-video-output')
+                if len(self.data_queue) > 1:
+                    batch_folder_name = f"BATCH UPLOAD {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
+                    output_folder = os.path.join(base_output, batch_folder_name)
+                else:
+                    output_folder = base_output
                 os.makedirs(output_folder, exist_ok=True)
                 
                 for i, item in enumerate(self.data_queue):
@@ -612,20 +627,23 @@ class XMLToVideoApp:
                             settings.get("moving_window", False),
                             settings.get("window_size", 10),
                             settings.get("window_wordonly", False),
-                            settings.get("mask_character", "_"),
+                            settings.get("mask_narrow", "_"),
+                            settings.get("mask_wide", "#"),
                             settings.get("margin", 20),
                             None,  # progress_callback
                             self.enable_timing_var.get(),
                             self.start_time_var.get(),
                             self.end_time_var.get(),
                             self.duration_percent_var.get(),
-                            self.timing_mode_var.get()
+                            self.timing_mode_var.get(),
+                            settings.get("show_caret", True)
                         )
                         
                         # Save video
                         data_filename = os.path.splitext(os.path.basename(data_path))[0]
                         output_path = os.path.join(output_folder, f'{data_filename}_data.mp4')
                         self.save_video(frames, frame_times, output_path)
+                        self.export_settings_to_csv(settings, output_path)
                         
                         # Restore original path
                         self.data_txt_path = original_data_path
@@ -668,9 +686,14 @@ class XMLToVideoApp:
         self.progress_idfx.config(maximum=len(self.idfx_queue), value=0)
         def process_queue():
             try:
-                # Create output folder in the program directory
+                # Create output folder (timestamped batch subfolder only when 2+ files)
                 program_dir = os.path.dirname(os.path.abspath(__file__))
-                output_folder = os.path.join(program_dir, 'xml-to-text-video-output')
+                base_output = os.path.join(program_dir, 'xml-to-text-video-output')
+                if len(self.idfx_queue) > 1:
+                    batch_folder_name = f"BATCH UPLOAD {datetime.now().strftime('%Y-%m-%d %H-%M-%S')}"
+                    output_folder = os.path.join(base_output, batch_folder_name)
+                else:
+                    output_folder = base_output
                 os.makedirs(output_folder, exist_ok=True)
                 for i, item in enumerate(self.idfx_queue):
                     try:
@@ -691,18 +714,21 @@ class XMLToVideoApp:
                             settings.get("moving_window", False),
                             settings.get("window_size", 10),
                             settings.get("window_wordonly", False),
-                            settings.get("mask_character", "_"),
+                            settings.get("mask_narrow", "_"),
+                            settings.get("mask_wide", "#"),
                             settings.get("margin", 20),
                             None,  # progress_callback
                             self.enable_timing_var.get(),
                             self.start_time_var.get(),
                             self.end_time_var.get(),
                             self.duration_percent_var.get(),
-                            self.timing_mode_var.get()
+                            self.timing_mode_var.get(),
+                            settings.get("show_caret", True)
                         )
                         idfx_filename = os.path.splitext(os.path.basename(idfx_path))[0]
                         output_path = os.path.join(output_folder, f'{idfx_filename}_idfx.mp4')
                         self.save_video(frames, frame_times, output_path)
+                        self.export_settings_to_csv(settings, output_path)
                         self.progress_idfx.config(value=i + 1)
                         self.root.update_idletasks()
                     except Exception as e:
@@ -765,14 +791,16 @@ class XMLToVideoApp:
                 settings.get("moving_window", False),
                 settings.get("window_size", 10),
                 settings.get("window_wordonly", False),
-                settings.get("mask_character", "_"),
+                settings.get("mask_narrow", "_"),
+                settings.get("mask_wide", "#"),
                 settings.get("margin", 20),
                 None,  # progress_callback
                 self.enable_timing_var.get(),
                 self.start_time_var.get(),
                 self.end_time_var.get(),
                 self.duration_percent_var.get(),
-                self.timing_mode_var.get()
+                self.timing_mode_var.get(),
+                settings.get("show_caret", True)
             )
             # Assemble video
             if settings["save_video"]:
@@ -783,6 +811,7 @@ class XMLToVideoApp:
                 xml_filename = os.path.splitext(os.path.basename(self.xml_path))[0]
                 output_path = os.path.join(output_folder, f'{xml_filename}.mp4')
                 self.save_video(frames, frame_times, output_path)
+                self.export_settings_to_csv(settings, output_path)
                 self.status_label.config(text=f"Video saved to {output_path}", fg="green")
                 messagebox.showinfo("Done", f"Video saved to {output_path}")
             else:
@@ -833,14 +862,16 @@ class XMLToVideoApp:
                     settings.get("moving_window", False),
                     settings.get("window_size", 10),
                     settings.get("window_wordonly", False),
-                    settings.get("mask_character", "_"),
+                    settings.get("mask_narrow", "_"),
+                settings.get("mask_wide", "#"),
                     settings.get("margin", 20),
                     progress_callback=update_progress,
                     enable_timing=self.enable_timing_var.get(),
                     start_time=self.start_time_var.get(),
                     end_time=self.end_time_var.get(),
                     duration_percent=self.duration_percent_var.get(),
-                    timing_mode=self.timing_mode_var.get()
+                    timing_mode=self.timing_mode_var.get(),
+                    show_caret=settings.get("show_caret", True)
                 )
                 print(f"[DEBUG] Generated {len(frames)} frames.")
                 self.data_status_label.config(text=f"Generated {len(frames)} frames. Saving video...", fg="blue")
@@ -852,6 +883,7 @@ class XMLToVideoApp:
                 output_path = os.path.join(output_folder, f'{data_filename}_data.mp4')
                 print(f"[DEBUG] Saving video to {output_path}...")
                 self.save_video(frames, frame_times, output_path)
+                self.export_settings_to_csv(settings, output_path)
                 print(f"[DEBUG] Video saved to {output_path}.")
                 self.data_status_label.config(text=f"Video saved to {output_path}", fg="green")
                 messagebox.showinfo("Done", f"Video saved to {output_path}")
@@ -897,14 +929,16 @@ class XMLToVideoApp:
                     settings.get("moving_window", False),
                     settings.get("window_size", 10),
                     settings.get("window_wordonly", False),
-                    settings.get("mask_character", "_"),
+                    settings.get("mask_narrow", "_"),
+                settings.get("mask_wide", "#"),
                     settings.get("margin", 20),
                     progress_callback=update_progress,
                     enable_timing=self.enable_timing_var.get(),
                     start_time=self.start_time_var.get(),
                     end_time=self.end_time_var.get(),
                     duration_percent=self.duration_percent_var.get(),
-                    timing_mode=self.timing_mode_var.get()
+                    timing_mode=self.timing_mode_var.get(),
+                    show_caret=settings.get("show_caret", True)
                 )
                 # Create output folder in the program directory
                 program_dir = os.path.dirname(os.path.abspath(__file__))
@@ -913,6 +947,7 @@ class XMLToVideoApp:
                 idfx_filename = os.path.splitext(os.path.basename(self.idfx_path))[0]
                 output_path = os.path.join(output_folder, f'{idfx_filename}_idfx.mp4')
                 self.save_video(frames, frame_times, output_path)
+                self.export_settings_to_csv(settings, output_path)
                 self.idfx_status_label.config(text=f"Video saved to {output_path}", fg="green")
                 messagebox.showinfo("Done", f"Video saved to {output_path}")
                 self.progress_idfx.stop()
@@ -1202,7 +1237,7 @@ class XMLToVideoApp:
             pass
         return None
 
-    def generate_frames(self, text_states, frame_times, font_family=None, font_size=None, bold=None, moving_window=False, window_size=10, window_wordonly=False, mask_character="_", margin=20, progress_callback=None, enable_timing=False, start_time=0, end_time=0, duration_percent=100.0, timing_mode="absolute"):
+    def generate_frames(self, text_states, frame_times, font_family=None, font_size=None, bold=None, moving_window=False, window_size=10, window_wordonly=False, mask_narrow="_", mask_wide="#", margin=20, progress_callback=None, enable_timing=False, start_time=0, end_time=0, duration_percent=100.0, timing_mode="absolute", show_caret=True):
         from PIL import ImageFont, Image, ImageDraw
         try:
             from matplotlib import font_manager
@@ -1219,7 +1254,8 @@ class XMLToVideoApp:
         if moving_window:
             window_size = self.window_size_var.get()
             window_wordonly = self.window_wordonly_var.get()
-            mask_character = self.mask_character_var.get()
+            mask_narrow = self.mask_narrow_var.get() or "_"
+            mask_wide = self.mask_wide_var.get() or "#"
         if margin == 20:  # Only use UI margin if default was passed
             margin = self.margin_var.get()
         
@@ -1404,22 +1440,34 @@ class XMLToVideoApp:
                                 draw.text((x, y), c, font=font, fill="black")
                                 # Use natural character spacing for readable text
                                 char_width = draw.textbbox((x, y), c, font=font)[2] - draw.textbbox((x, y), c, font=font)[0]
+                            elif c == ' ':
+                                # Keep spaces as spaces, never mask them
+                                draw.text((x, y), ' ', font=font, fill="black")
+                                char_width = draw.textbbox((x, y), ' ', font=font)[2] - draw.textbbox((x, y), ' ', font=font)[0]
                             else:
-                                # Show mask character for untyped text
-                                draw.text((x, y), mask_character, font=font, fill="black")
-                                # Use mask character width for consistent spacing
-                                char_width = draw.textbbox((x, y), mask_character, font=font)[2] - draw.textbbox((x, y), mask_character, font=font)[0]
+                                # Show mask for untyped text: use narrow or wide based on char width
+                                cw = draw.textbbox((x, y), c, font=font)[2] - draw.textbbox((x, y), c, font=font)[0]
+                                ref_w = draw.textbbox((x, y), "n", font=font)[2] - draw.textbbox((x, y), "n", font=font)[0]
+                                m = mask_wide if cw > ref_w * 1.1 else mask_narrow
+                                draw.text((x, y), m, font=font, fill="black")
+                                char_width = draw.textbbox((x, y), m, font=font)[2] - draw.textbbox((x, y), m, font=font)[0]
                         else:
-                            # Show the mask character (respecting line breaks)
+                            # Show the mask character (respecting line breaks and spaces)
                             if c == '\n':
-                                # Keep newlines as newlines but mask the character
+                                # Keep newlines as newlines
                                 draw.text((x, y), '\n', font=font, fill="black")
                                 char_width = 0  # Newlines don't advance x position
+                            elif c == ' ':
+                                # Keep spaces as spaces, never mask them
+                                draw.text((x, y), ' ', font=font, fill="black")
+                                char_width = draw.textbbox((x, y), ' ', font=font)[2] - draw.textbbox((x, y), ' ', font=font)[0]
                             else:
-                                # Replace with mask character
-                                draw.text((x, y), mask_character, font=font, fill="black")
-                                # Use mask character width for even spacing
-                                char_width = draw.textbbox((x, y), mask_character, font=font)[2] - draw.textbbox((x, y), mask_character, font=font)[0]
+                                # Replace with narrow or wide mask based on char width
+                                cw = draw.textbbox((x, y), c, font=font)[2] - draw.textbbox((x, y), c, font=font)[0]
+                                ref_w = draw.textbbox((x, y), "n", font=font)[2] - draw.textbbox((x, y), "n", font=font)[0]
+                                m = mask_wide if cw > ref_w * 1.1 else mask_narrow
+                                draw.text((x, y), m, font=font, fill="black")
+                                char_width = draw.textbbox((x, y), m, font=font)[2] - draw.textbbox((x, y), m, font=font)[0]
                         
                         x += char_width
                         char_idx += 1
@@ -1489,13 +1537,13 @@ class XMLToVideoApp:
                 else:
                     caret_h = max(1, int(round(font_size * 0.9)))
                     caret_x, caret_y = margin, margin + base_line_h - caret_h - 2
-            # Blinking caret logic with reset on new character
+            # Blinking caret logic with reset on new character (only if show_caret enabled)
             if last_text is None or text != last_text:
                 blink_time = 0.0
                 caret_visible = True
             else:
                 caret_visible = ((blink_time % blink_period) < (blink_period / 2))
-            if caret_visible:
+            if show_caret and caret_visible:
                 draw.rectangle(
                     [caret_x, caret_y, caret_x + caret_width, caret_y + caret_h],
                     fill=caret_color
@@ -1574,14 +1622,16 @@ class XMLToVideoApp:
                     self.moving_window_var.get(),
                     self.window_size_var.get(),
                     self.window_wordonly_var.get(),
-                    self.mask_character_var.get(),
+                    self.mask_narrow_var.get(),
+                    self.mask_wide_var.get(),
                     self.margin_var.get(),
                     None,  # progress_callback
                     self.enable_timing_var.get(),
                     self.start_time_var.get(),
                     self.end_time_var.get(),
                     self.duration_percent_var.get(),
-                    self.timing_mode_var.get()
+                    self.timing_mode_var.get(),
+                    show_caret=self.show_caret_var.get()
                 )
                 # Save to a temporary file
                 with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmpfile:
@@ -1603,6 +1653,7 @@ class XMLToVideoApp:
             "font_size": self.font_size_var.get(),
             "bold": self.bold_var.get(),
             "margin": self.margin_var.get(),
+            "show_caret": self.show_caret_var.get(),
             "uniform_typing": self.uniform_typing_var.get(),
             "chars_per_sec": self.chars_per_sec_var.get(),
             "video_speed": self.video_speed_var.get(),
@@ -1612,7 +1663,8 @@ class XMLToVideoApp:
             "moving_window": self.moving_window_var.get(),
             "window_size": self.window_size_var.get(),
             "window_wordonly": self.window_wordonly_var.get(),
-            "mask_character": self.mask_character_var.get(),
+            "mask_narrow": self.mask_narrow_var.get(),
+            "mask_wide": self.mask_wide_var.get(),
             "enable_timing": self.enable_timing_var.get(),
             "start_time": self.start_time_var.get(),
             "end_time": self.end_time_var.get(),
@@ -1625,6 +1677,7 @@ class XMLToVideoApp:
         self.font_size_var.set(settings.get("font_size", 30))
         self.bold_var.set(settings.get("bold", True))
         self.margin_var.set(settings.get("margin", 20))
+        self.show_caret_var.set(settings.get("show_caret", True))
         self.uniform_typing_var.set(settings.get("uniform_typing", False))
         self.chars_per_sec_var.set(settings.get("chars_per_sec", 10.0))
         self.video_speed_var.set(settings.get("video_speed", 1.0))
@@ -1634,7 +1687,8 @@ class XMLToVideoApp:
         self.moving_window_var.set(settings.get("moving_window", False))
         self.window_size_var.set(settings.get("window_size", 10))
         self.window_wordonly_var.set(settings.get("window_wordonly", False))
-        self.mask_character_var.set(settings.get("mask_character", "_"))
+        self.mask_narrow_var.set(settings.get("mask_narrow", settings.get("mask_character", "_")))
+        self.mask_wide_var.set(settings.get("mask_wide", "#"))
         self.enable_timing_var.set(settings.get("enable_timing", False))
         self.start_time_var.set(settings.get("start_time", 0))
         self.end_time_var.set(settings.get("end_time", 0))
@@ -1642,6 +1696,7 @@ class XMLToVideoApp:
         self.timing_mode_var.set(settings.get("timing_mode", "absolute"))
         self.update_window_controls()
         self.update_timing_controls()
+        self.update_uniform_typing_controls()
 
     def save_settings(self):
         settings = self.get_settings()
@@ -1667,15 +1722,71 @@ class XMLToVideoApp:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load settings: {e}")
 
+    def export_settings_to_csv(self, settings, output_path):
+        """Export settings to a CSV file alongside the video output."""
+        try:
+            base = os.path.splitext(output_path)[0]
+            csv_path = base + "_settings.csv"
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["setting", "value"])
+                for k, v in settings.items():
+                    writer.writerow([k, v])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export settings CSV: {e}")
+
+    def load_settings_from_csv(self):
+        """Load settings from a CSV file (exported by this program)."""
+        path = filedialog.askopenfilename(
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            title="Select settings CSV file"
+        )
+        if not path:
+            return
+        try:
+            settings = {}
+            with open(path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    k = row.get("setting")
+                    v = row.get("value")
+                    if k is not None and v is not None:
+                        if v == "True":
+                            settings[k] = True
+                        elif v == "False":
+                            settings[k] = False
+                        else:
+                            try:
+                                if '.' in v:
+                                    settings[k] = float(v)
+                                else:
+                                    settings[k] = int(v)
+                            except ValueError:
+                                settings[k] = v
+            self.set_settings(settings)
+            messagebox.showinfo("Settings Loaded", f"Settings loaded from {os.path.basename(path)}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load settings from CSV: {e}")
+
+    def update_uniform_typing_controls(self):
+        """Enable/disable uniform typing options based on checkbox state"""
+        state = "normal" if self.uniform_typing_var.get() else "disabled"
+        self.chars_per_sec_entry.config(state=state)
+        self.video_speed_entry.config(state=state)
+        self.word_speed_entry.config(state=state)
+        self.space_duration_entry.config(state=state)
+
     def update_window_controls(self):
         if self.moving_window_var.get():
             self.window_size_entry.config(state="normal")
             self.window_wordonly_check.config(state="normal")
-            self.mask_character_entry.config(state="normal")
+            self.mask_narrow_entry.config(state="normal")
+            self.mask_wide_entry.config(state="normal")
         else:
             self.window_size_entry.config(state="disabled")
             self.window_wordonly_check.config(state="disabled")
-            self.mask_character_entry.config(state="disabled")
+            self.mask_narrow_entry.config(state="disabled")
+            self.mask_wide_entry.config(state="disabled")
 
     def update_timing_controls(self):
         """Update timing controls based on checkbox state"""
